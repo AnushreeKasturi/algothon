@@ -434,7 +434,7 @@ function attackLowSlow(push){
   // 16 failures spread across ~5 hours (22:00 day13 → 03:00 day14)
   const slots=[[13,22,5],[13,22,41],[13,23,12],[13,23,58],[14,0,20],[14,0,47],[14,1,9],[14,1,33],
                [14,1,58],[14,2,14],[14,2,29],[14,2,38],[14,2,45],[14,2,52],[14,2,57],[14,3,1]];
-  slots.forEach((t,i)=>push(isoOf(t[0],t[1],t[2]), ip, users[i%users.length], 'ssh', 'FAIL', 'wrong password'));
+  slots.forEach((t,i)=>push(isoOf(t[0],t[1],t[2],0), ip, users[i%users.length], 'ssh', 'FAIL', 'wrong password'));
   // the quiet success
   push(isoOf(14,3,4,30), ip, victim, 'ssh', 'OK', 'session opened');
   // impossible travel: emma also "logs in" from HQ 6 minutes earlier
@@ -675,11 +675,12 @@ function buildNarrative(ip, findings, bruteN, userN){
   // full external intrusion
   if(has(STAGE.COMP)){
     let n=`Source <b>${ip}</b> (${geoOf(ip)}) ran a complete intrusion. `;
-    if(has(STAGE.RECON)) n+=`It began by <b>scanning for exposed admin panels and config files</b>, then `;
+    n+=has(STAGE.RECON) ? `It began by <b>scanning for exposed admin panels and config files</b>, then ` : `It `;
     n+=`ran a <b>brute-force attack (${bruteN} failed logins across ${userN} account${userN===1?'':'s'})</b>. One attempt eventually <b>succeeded</b> — the moment of compromise. `;
     if(has(STAGE.TRAVEL)) n+=`The same account was simultaneously active from a trusted location, <b>confirming the login was an imposter</b>. `;
-    if(has(STAGE.PRIV)) n+=`The attacker then <b>escalated privileges</b>, `;
-    if(has(STAGE.EXFIL)) n+=`accessed <b>sensitive credential and customer files</b> and pushed a <b>large outbound export</b> consistent with data theft. `;
+    const exfil=`accessed <b>sensitive credential and customer files</b> and pushed a <b>large outbound export</b> consistent with data theft. `;
+    if(has(STAGE.PRIV)) n+=`The attacker then <b>escalated privileges</b>`+(has(STAGE.EXFIL) ? `, `+exfil : `. `);
+    else if(has(STAGE.EXFIL)) n+=`The attacker then `+exfil;
     n+=`These events are connected and should be handled as one active incident, not isolated alerts.`;
     return n;
   }

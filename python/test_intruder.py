@@ -99,6 +99,12 @@ class Evidence(unittest.TestCase):
                 with self.subTest(ip=inc.ip, finding=f.title):
                     self.assertTrue(f.evidence)
 
+    def test_narrative_sentences_start_capitalised(self):
+        for inc in surfaced(analyze(generate("all"))):
+            with self.subTest(ip=inc.ip):
+                for sentence in inc.narrative.split(". ")[1:]:
+                    self.assertTrue(sentence[:1].isupper(), sentence)
+
     def test_mitre_techniques_reported(self):
         a = by_ip(analyze(generate("external")))[EXTERNAL_IP]
         self.assertTrue(any(t.startswith("T1110") for t in a.techniques))

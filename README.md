@@ -41,7 +41,7 @@ correct run surfaces only the real attacker(s).
 cd python && python -m unittest -v
 ```
 
-22 tests, run on every push via GitHub Actions (Python 3.9 and 3.12). They cover:
+23 tests, run on every push via GitHub Actions (Python 3.9 and 3.12). They cover:
 each scenario surfaces **exactly** the real attacker(s); the benign decoy and
 internal hosts are never flagged; every finding carries log-line evidence;
 parser edge cases (blank/garbage/short lines, loose `sshd`/web formats); and an

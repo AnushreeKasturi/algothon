@@ -88,14 +88,17 @@ def _narrative(ip: str, findings: List[Finding], brute_n: int, user_n: int) -> s
         n = f"Source {ip} ({g}) ran a complete intrusion. "
         if Stage.RECON in have:
             n += "It began by scanning for exposed admin panels and config files, then "
+        else:
+            n += "It "
         s = "" if user_n == 1 else "s"
         n += f"ran a brute-force attack ({brute_n} failed logins across {user_n} account{s}). One attempt eventually succeeded — the moment of compromise. "
         if Stage.TRAVEL in have:
             n += "The same account was simultaneously active from a trusted location, confirming the login was an imposter. "
+        exfil = "accessed sensitive credential and customer files and pushed a large outbound export consistent with data theft. "
         if Stage.PRIV in have:
-            n += "The attacker then escalated privileges, "
-        if Stage.EXFIL in have:
-            n += "accessed sensitive credential and customer files and pushed a large outbound export consistent with data theft. "
+            n += "The attacker then escalated privileges" + (", " + exfil if Stage.EXFIL in have else ". ")
+        elif Stage.EXFIL in have:
+            n += "The attacker then " + exfil
         n += "These events are connected and should be handled as one active incident, not isolated alerts."
         return n
     if Stage.TRAVEL in have:
