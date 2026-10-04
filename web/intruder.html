@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Intruder — log forensics console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0f1117;
+    --panel:#171a24;
+    --panel-2:#1e222f;
+    --line:#2a2f3f;
+    --line-soft:#232838;
+    --text:#e7eaf2;
+    --muted:#8b93a7;
+    --faint:#5b6479;
+    --safe:#46b8a6;
+    --info:#6aa6e0;
+    --warn:#e0a458;
+    --high:#e97b4e;
+    --crit:#e5484d;
+    --crit-bg:rgba(229,72,77,.12);
+    --warn-bg:rgba(224,164,88,.12);
+    --sans:'Space Grotesk',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html{scroll-padding-top:env(safe-area-inset-top,0px)}
+  body{
+    margin:0;background:var(--ink);color:var(--text);
+    font-family:var(--sans);line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+  /* ---------- layout ---------- */
+  header.top{
+    border-bottom:1px solid var(--line);
+    padding:18px clamp(16px,4vw,40px);
+    display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;
+    background:linear-gradient(180deg,#141722,#10131b);
+    position:sticky;top:0;z-index:40;
+  }
+  .brand{display:flex;align-items:center;gap:14px;min-width:0}
+  .mark{
+    width:40px;height:40px;flex:none;border:1px solid var(--line);border-radius:10px;
+    background:radial-gradient(120% 120% at 30% 20%,#232a3c,#13161f);
+    display:grid;place-items:center;position:relative;
+  }
+  .mark span{width:11px;height:11px;border-radius:50%;background:var(--crit);
+    box-shadow:0 0 0 4px rgba(229,72,77,.18),0 0 14px 2px rgba(229,72,77,.5);}
+  .brand h1{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0;line-height:1.1}
+  .brand .sub{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+  .controls{display:flex;flex-wrap:wrap;gap:10px}
+  button{
+    font-family:var(--sans);font-size:13.5px;font-weight:500;cursor:pointer;
+    border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);
+    padding:9px 15px;transition:border-color .15s,background .15s,transform .05s;
+  }
+  button:hover{border-color:#3a4256;background:#242938}
+  button:active{transform:translateY(1px)}
+  button:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+  button.primary{background:var(--crit);border-color:var(--crit);color:#fff;font-weight:600}
+  button.primary:hover{background:#e5565a}
+  button.ghost{background:transparent}
+  button[disabled]{opacity:.45;cursor:not-allowed}
+
+  main{padding:clamp(16px,4vw,40px);max-width:1280px;margin:0 auto}
+
+  /* ---------- stat strip ---------- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:1px;
+    background:var(--line-soft);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:26px}
+  .stat{background:var(--panel);padding:16px 18px}
+  .stat .k{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em}
+  .stat .v{font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:5px;font-variant-numeric:tabular-nums}
+  .stat .v.crit{color:var(--crit)} .stat .v.warn{color:var(--warn)} .stat .v.safe{color:var(--safe)}
+
+  /* ---------- tabs ---------- */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:22px;flex-wrap:wrap}
+  .tab{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;
+    color:var(--muted);padding:11px 14px;font-weight:600;font-size:14px}
+  .tab:hover{color:var(--text);background:none}
+  .tab.active{color:var(--text);border-bottom-color:var(--crit)}
+  .tab .badge{font-family:var(--mono);font-size:11px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:20px;padding:1px 8px;margin-left:7px}
+  .view{display:none}.view.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+
+  /* ---------- incident cards ---------- */
+  .sect-note{color:var(--muted);font-size:13.5px;margin:0 0 18px;max-width:70ch}
+  .incident{border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:14px;overflow:hidden}
+  .inc-head{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;
+    padding:16px 18px;cursor:pointer;width:100%;text-align:left;background:none;border:none;border-radius:0}
+  .inc-head:hover{background:var(--panel-2)}
+  .sev-chip{font-family:var(--mono);font-size:11px;font-weight:700;padding:5px 10px;border-radius:7px;white-space:nowrap}
+  .sev-critical{background:var(--crit-bg);color:var(--crit);border:1px solid rgba(229,72,77,.35)}
+  .sev-high{background:rgba(233,123,78,.12);color:var(--high);border:1px solid rgba(233,123,78,.35)}
+  .sev-medium{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(224,164,88,.35)}
+  .sev-low{background:rgba(106,166,224,.12);color:var(--info);border:1px solid rgba(106,166,224,.3)}
+  .inc-id{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .inc-actor{font-family:var(--mono);font-size:15px;font-weight:700;margin-top:3px}
+  .inc-sum{color:var(--muted);font-size:13px;margin-top:3px}
+  .inc-score{text-align:right}
+  .inc-score .n{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .inc-score .l{font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .chev{color:var(--faint);transition:transform .2s;font-size:13px}
+  .incident.open .chev{transform:rotate(90deg)}
+  .inc-body{display:none;padding:0 18px 20px;border-top:1px solid var(--line-soft)}
+  .incident.open .inc-body{display:block}
+
+  .narrative{background:var(--panel-2);border:1px solid var(--line-soft);border-left:3px solid var(--crit);
+    border-radius:0 10px 10px 0;padding:14px 16px;margin:18px 0;font-size:14px;line-height:1.65}
+  .narrative b{color:var(--text)}
+
+  .kchain{list-style:none;margin:0;padding:0;position:relative}
+  .kchain::before{content:"";position:absolute;left:11px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .kstep{position:relative;padding:0 0 18px 34px}
+  .kstep:last-child{padding-bottom:0}
+  .kdot{position:absolute;left:4px;top:3px;width:16px;height:16px;border-radius:50%;
+    background:var(--panel);border:2px solid var(--crit);z-index:1}
+  .kstage{font-family:var(--mono);font-size:11px;color:var(--high);letter-spacing:.03em;font-weight:700}
+  .ktitle{font-weight:600;font-size:14px;margin-top:2px}
+  .ktime{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:1px}
+  .kdesc{color:var(--muted);font-size:13px;margin-top:4px}
+
+  .ev-group{margin-top:20px}
+  .ev-group h4{font-size:13px;font-weight:600;margin:0 0 9px;color:var(--text);display:flex;align-items:center;gap:8px}
+  .ev-group h4 .cnt{font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:400}
+  .logline{font-family:var(--mono);font-size:12px;padding:5px 10px;border-radius:6px;
+    background:#0c0e14;border:1px solid var(--line-soft);margin-bottom:4px;overflow-x:auto;white-space:nowrap;color:#c5ccdd}
+  .logline .t{color:var(--faint)} .logline .ip{color:var(--high)} .logline .fail{color:var(--crit)}
+  .logline .ok{color:var(--safe)} .logline .u{color:var(--info)}
+
+  /* ---------- raw events table ---------- */
+  .filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}
+  input[type=text],select{font-family:var(--mono);font-size:13px;background:var(--panel);color:var(--text);
+    border:1px solid var(--line);border-radius:8px;padding:9px 12px;min-width:0}
+  input[type=text]{flex:1;min-width:180px}
+  input:focus,select:focus{outline:none;border-color:var(--info)}
+  .tbl-wrap{border:1px solid var(--line);border-radius:12px;overflow:auto;max-height:65vh}
+  table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12.5px}
+  th{position:sticky;top:0;background:var(--panel-2);color:var(--muted);text-align:left;
+    font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
+  td{padding:8px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  tr.flagged td{background:var(--crit-bg)}
+  tr:hover td{background:var(--panel-2)}
+  .pill{font-size:10.5px;padding:2px 7px;border-radius:5px;font-weight:700}
+  .pill.FAIL{background:var(--crit-bg);color:var(--crit)} .pill.OK{background:rgba(70,184,166,.14);color:var(--safe)}
+  .pill.SCAN{background:var(--warn-bg);color:var(--warn)}
+
+  /* ---------- overview ---------- */
+  .ov-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+  .card{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px}
+  .card h3{margin:0 0 14px;font-size:14px;font-weight:600}
+  .bar-row{display:grid;grid-template-columns:130px 1fr 44px;gap:10px;align-items:center;margin-bottom:9px;font-family:var(--mono);font-size:12px}
+  .bar-row .lab{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+  .bar-track{background:var(--panel-2);border-radius:5px;height:10px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:5px;background:var(--info)}
+  .bar-fill.bad{background:var(--crit)}
+  .bar-row .num{text-align:right;color:var(--faint)}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:120px}
+  .spark .b{flex:1;background:var(--info);border-radius:2px 2px 0 0;min-height:2px;position:relative}
+  .spark .b.hot{background:var(--crit)}
+  .legend{display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:middle}
+
+  /* ---------- modal ---------- */
+  .modal{position:fixed;inset:0;background:rgba(6,8,13,.72);display:none;z-index:60;
+    padding:clamp(16px,5vw,60px);overflow:auto}
+  .modal.open{display:block}
+  .modal-box{max-width:760px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .modal-box h2{margin:0 0 6px;font-size:18px}
+  .modal-box p{color:var(--muted);font-size:13.5px;margin:0 0 14px}
+  textarea{width:100%;min-height:220px;font-family:var(--mono);font-size:12px;background:#0c0e14;
+    color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;resize:vertical}
+  .modal-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+  .fmt{font-family:var(--mono);font-size:11px;color:var(--faint);background:#0c0e14;border:1px solid var(--line-soft);
+    border-radius:8px;padding:10px 12px;margin:10px 0;line-height:1.7;overflow-x:auto}
+
+  .tech-chip{font-family:var(--mono);font-size:10.5px;color:var(--info);background:rgba(106,166,224,.1);
+    border:1px solid rgba(106,166,224,.28);border-radius:5px;padding:2px 7px;white-space:nowrap}
+  .tech-wrap{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 16px}
+  .conf-chip{font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;margin-top:6px;display:inline-block}
+  .inc-geo{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px}
+  .inc-geo .ext{color:var(--high)}
+  .actions{background:var(--panel-2);border:1px solid var(--line-soft);border-radius:10px;padding:14px 16px;margin:18px 0 6px}
+  .actions h4{margin:0 0 10px;font-size:13px}
+  .actions ol{margin:0;padding-left:18px}
+  .actions li{font-size:13.5px;color:var(--text);margin-bottom:7px;line-height:1.5}
+  .actions li::marker{color:var(--crit);font-weight:700}
+  .report-btn{margin-top:16px}
+  select#scenario{min-width:190px}
+  .empty{text-align:center;color:var(--muted);padding:60px 20px;font-size:14px}
+  footer{color:var(--faint);font-size:12px;text-align:center;padding:30px 20px 46px;font-family:var(--mono)}
+  a{color:var(--info)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="mark"><span></span></div>
+    <div>
+      <h1>Intruder</h1>
+      <div class="sub">log forensics console · ALG-CYBER-01</div>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="ghost" id="btnUpload">Load your logs</button>
+    <select id="scenario" title="Choose a sample attack scenario">
+      <option value="external">Scenario: external breach</option>
+      <option value="lowslow">Scenario: low &amp; slow</option>
+      <option value="insider">Scenario: insider threat</option>
+      <option value="all">Scenario: all three at once</option>
+    </select>
+    <button class="primary" id="btnSample">Load scenario</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats" id="stats">
+    <div class="stat"><div class="k">events</div><div class="v" id="s-events">—</div></div>
+    <div class="stat"><div class="k">unique IPs</div><div class="v" id="s-ips">—</div></div>
+    <div class="stat"><div class="k">time span</div><div class="v" id="s-span" style="font-size:16px">—</div></div>
+    <div class="stat"><div class="k">incidents</div><div class="v crit" id="s-inc">—</div></div>
+    <div class="stat"><div class="k">top severity</div><div class="v" id="s-sev" style="font-size:16px">—</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-view="incidents">Incidents <span class="badge" id="b-inc">0</span></button>
+    <button class="tab" data-view="overview">Overview</button>
+    <button class="tab" data-view="events">Raw events <span class="badge" id="b-ev">0</span></button>
+    <button class="tab" data-view="about">How it works</button>
+  </div>
+
+  <section class="view active" id="view-incidents">
+    <p class="sect-note">Actors are scored by combining hard detection rules with a statistical anomaly score measured against the traffic baseline. Open an incident to see the reconstructed attack chain and the exact log lines that prove it.</p>
+    <div id="incidentList"><div class="empty">Load the sample incident or your own logs to begin the hunt.</div></div>
+  </section>
+
+  <section class="view" id="view-overview">
+    <div class="ov-grid">
+      <div class="card">
+        <h3>Events over time</h3>
+        <div class="spark" id="spark"></div>
+        <div class="legend"><span><i style="background:var(--info)"></i>normal</span><span><i style="background:var(--crit)"></i>contains flagged activity</span></div>
+      </div>
+      <div class="card">
+        <h3>Busiest source IPs</h3>
+        <div id="topips"></div>
+      </div>
+      <div class="card">
+        <h3>Failed logins by source</h3>
+        <div id="topfails"></div>
+      </div>
+      <div class="card">
+        <h3>Most targeted accounts</h3>
+        <div id="topusers"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-events">
+    <div class="filters">
+      <input type="text" id="search" placeholder="search ip, user, action, path…">
+      <select id="fType">
+        <option value="">all actions</option>
+        <option value="ssh">ssh login</option>
+        <option value="web">web request</option>
+        <option value="sudo">sudo</option>
+        <option value="file">file access</option>
+      </select>
+      <select id="fStatus">
+        <option value="">all results</option>
+        <option value="FAIL">failures only</option>
+        <option value="OK">success only</option>
+      </select>
+      <label style="font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="fFlag"> flagged only
+      </label>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>time</th><th>source ip</th><th>user</th><th>action</th><th>result</th><th>detail</th></tr></thead>
+        <tbody id="evBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="view" id="view-about">
+    <div class="card" style="max-width:820px">
+      <h3>What this console does</h3>
+      <p class="sect-note">Thousands of ordinary events can hide one attacker. Intruder ingests security logs, scores every source, and — the part that matters — <b style="color:var(--text)">connects related events into a single incident with a step-by-step attack narrative</b> instead of spraying isolated alerts.</p>
+      <h3 style="margin-top:22px">Detection layers</h3>
+      <div id="rulesDoc"></div>
+      <h3 style="margin-top:22px">Bring your own logs</h3>
+      <p class="sect-note">Paste logs in this format (one event per line). Unknown lines are skipped gracefully.</p>
+      <div class="fmt">ISO_TIME | SOURCE_IP | USER | ACTION | RESULT | DETAIL<br>2026-03-14T02:11:04Z | 203.0.113.44 | root | ssh | FAIL | wrong password<br>2026-03-14T09:02:51Z | 10.0.4.12 | alice | web | OK | GET /dashboard 200</div>
+      <p class="sect-note">ACTION ∈ {ssh, web, sudo, file} · RESULT ∈ {OK, FAIL, SCAN}. The sample generator and a friendlier best-effort parser handle minor variations too.</p>
+    </div>
+  </section>
+</main>
+
+<footer>Intruder · client-side forensic analysis · no data leaves your browser</footer>
+
+<!-- upload modal -->
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h2>Load your logs</h2>
+    <p>Paste log lines below, or upload a file. See <b>How it works</b> for the expected format.</p>
+    <input type="file" id="fileInput" accept=".txt,.log,.csv" style="margin-bottom:12px;color:var(--muted);font-family:var(--mono);font-size:12px">
+    <textarea id="pasteArea" placeholder="2026-03-14T02:11:04Z | 203.0.113.44 | root | ssh | FAIL | wrong password&#10;…"></textarea>
+    <div class="modal-foot">
+      <button class="ghost" id="mClose">Cancel</button>
+      <button class="primary" id="mRun">Analyze logs</button>
+    </div>
+  </div>
+</div>
+
+<!-- report modal -->
+<div class="modal" id="reportModal">
+  <div class="modal-box">
+    <h2>Incident report</h2>
+    <p>Share-ready summary with the attack chain, MITRE techniques, response steps, and evidence. Select all and copy, or use the button.</p>
+    <textarea id="reportText" readonly style="min-height:320px"></textarea>
+    <div class="modal-foot">
+      <button class="ghost" id="rClose">Close</button>
+      <button class="primary" id="rCopy">Copy report</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======================================================================
+   Intruder — Find the Intruder (ALG-CYBER-01)
+   Everything runs client-side: generation, parsing, detection, correlation.
+   ====================================================================== */
+
+/* ---------- seeded RNG so the demo is reproducible ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let rand = mulberry32(20260314);
+const pick = arr => arr[Math.floor(rand()*arr.length)];
+const ri = (a,b) => a+Math.floor(rand()*(b-a+1));
+const pad = n => String(n).padStart(2,'0');
+
+/* ---------- sample log generator ---------- */
+const NORMAL_USERS = ['alice','bob','carol','dinesh','emma','frank','grace','henry','priya','sam'];
+const INTERNAL_IPS = ['10.0.4.12','10.0.4.18','10.0.5.7','10.0.5.22','10.0.6.3','192.168.1.40','192.168.1.55'];
+const NORMAL_PATHS = ['/dashboard','/profile','/api/orders','/api/users','/reports','/settings','/home','/api/metrics','/search','/inbox'];
+const SCAN_PATHS = ['/admin','/wp-login.php','/.env','/phpmyadmin','/.git/config','/backup.zip','/config.php','/api/v1/keys','/server-status','/shell.php'];
+const SENSITIVE_FILES = ['/etc/shadow','/var/db/customers.sql','/home/root/.ssh/id_rsa','/var/backups/payroll.csv','/opt/app/secrets.yml','/opt/app/config/.env'];
+
+/* geolocation lookup for known demo IPs (a real system would use a GeoIP DB) */
+const GEO = {
+  '203.0.113.66':'Tallinn, EE',
+  '203.0.113.99':'Lagos, NG',
+  '198.51.100.23':'Partner VPN · Berlin, DE',
+};
+const isExternal = ip => !(ip.startsWith('10.')||ip.startsWith('192.168.'));
+function geoOf(ip){ if(!isExternal(ip)) return 'HQ network'; return GEO[ip]||'Unknown'; }
+/* trust class for impossible-travel: HQ and the partner VPN are trusted anchors */
+function locClass(ip){
+  if(!isExternal(ip)) return 'trusted';
+  const g=GEO[ip];
+  if(g && /Partner/.test(g)) return 'trusted';
+  return g ? 'ext:'+g : 'unknown';
+}
+
+function isoOf(day, h, m, s){ return `2026-03-${pad(day)}T${pad(h)}:${pad(m)}:${pad(s)}Z`; }
+
+/* shared background: 3 days of mostly-normal business traffic */
+function genBackground(push){
+  for(let day=12; day<=14; day++){
+    for(let h=0; h<24; h++){
+      const load = (h>=8 && h<=19) ? ri(18,34) : ri(1,5);
+      for(let i=0;i<load;i++){
+        const ip = pick(INTERNAL_IPS);
+        const user = pick(NORMAL_USERS);
+        const m=ri(0,59), s=ri(0,59);
+        const r = rand();
+        if(r<0.12){
+          const ok = rand()<0.93;
+          push(isoOf(day,h,m,s), ip, user, 'ssh', ok?'OK':'FAIL', ok?'session opened':'wrong password');
+        } else if(r<0.2){
+          if(user==='alice'||user==='dinesh') push(isoOf(day,h,m,s), ip, user, 'sudo', 'OK', 'apt upgrade');
+          else push(isoOf(day,h,m,s), ip, user, 'web', 'OK', 'GET '+pick(NORMAL_PATHS)+' 200');
+        } else {
+          const code = rand()<0.9?200:(rand()<0.5?302:404);
+          push(isoOf(day,h,m,s), ip, user, 'web', 'OK', pick(['GET','POST'])+' '+pick(NORMAL_PATHS)+' '+code);
+        }
+      }
+    }
+  }
+  // distractor: one legit user (carol) fat-fingering her password over the workday,
+  // then succeeding. Noisy but benign — the engine should NOT call this an incident.
+  const noisyIP = '198.51.100.23';
+  for(let i=0;i<7;i++){ const h=ri(9,16); push(isoOf(13,h,ri(0,59),ri(0,59)), noisyIP, 'carol', 'ssh', 'FAIL', 'wrong password'); }
+  for(let i=0;i<5;i++){ const h=ri(9,17); push(isoOf(13,h,ri(0,59),ri(0,59)), noisyIP, 'carol', 'ssh', 'OK', 'session opened'); }
+}
+
+/* Scenario A: loud external breach — recon → brute force → compromise → root → exfil */
+function attackExternal(push){
+  const ip='203.0.113.66', victim='bob';
+  SCAN_PATHS.concat(SCAN_PATHS).forEach((p,i)=>{
+    const m=40+Math.floor(i*0.6);
+    push(isoOf(14,1,Math.min(m,59),ri(0,59)), ip, '-', 'web', 'SCAN', 'GET '+p+' 404');
+  });
+  const spray=['root','admin','oracle','postgres','bob','alice','test','ubuntu','git','dev'];
+  for(let i=0;i<140;i++){
+    const mm=120+Math.floor(i*0.26), h=Math.floor(mm/60), m=mm%60;
+    const u=(i>120&&rand()<0.5)?victim:pick(spray);
+    push(isoOf(14,h,m,ri(0,59)), ip, u, 'ssh', 'FAIL', 'wrong password');
+  }
+  push(isoOf(14,2,41,12), ip, victim, 'ssh', 'OK', 'session opened');
+  push(isoOf(14,2,43,20), ip, victim, 'sudo', 'FAIL', 'bob not in sudoers');
+  push(isoOf(14,2,44,51), ip, victim, 'sudo', 'OK', 'su - root');
+  push(isoOf(14,2,47,3),  ip, 'root', 'file', 'OK', 'read /etc/shadow');
+  SENSITIVE_FILES.forEach((f,i)=>push(isoOf(14,2,48+i,ri(0,59)), ip, 'root', 'file', 'OK', 'read '+f));
+  push(isoOf(14,2,55,30), ip, 'root', 'web', 'OK', 'POST /api/export 200 (payload 412MB)');
+}
+
+/* Scenario B: low & slow — failures spread thin over hours to dodge volume limits,
+   several usernames, eventual success, then impossible travel for the same account */
+function attackLowSlow(push){
+  const ip='203.0.113.99', victim='emma';
+  const users=['emma','admin','svc_backup','emma','root'];
+  // 16 failures spread across ~5 hours (22:00 day13 → 03:00 day14)
+  const slots=[[13,22,5],[13,22,41],[13,23,12],[13,23,58],[14,0,20],[14,0,47],[14,1,9],[14,1,33],
+               [14,1,58],[14,2,14],[14,2,29],[14,2,38],[14,2,45],[14,2,52],[14,2,57],[14,3,1]];
+  slots.forEach((t,i)=>push(isoOf(t[0],t[1],t[2]), ip, users[i%users.length], 'ssh', 'FAIL', 'wrong password'));
+  // the quiet success
+  push(isoOf(14,3,4,30), ip, victim, 'ssh', 'OK', 'session opened');
+  // impossible travel: emma also "logs in" from HQ 6 minutes earlier
+  push(isoOf(14,2,58,0), '10.0.5.7', victim, 'ssh', 'OK', 'session opened');
+  // quiet data access, no noisy brute after
+  push(isoOf(14,3,9,12), ip, victim, 'file', 'OK', 'read /var/db/customers.sql');
+  push(isoOf(14,3,15,40), ip, victim, 'web', 'OK', 'POST /api/export 200 (payload 180MB)');
+}
+
+/* Scenario C: insider threat — valid internal account, no brute force at all,
+   just off-hours mass access to sensitive data and a bulk export */
+function attackInsider(push){
+  const ip='10.0.6.3', user='frank';
+  push(isoOf(14,3,2,10), ip, user, 'ssh', 'OK', 'session opened');
+  const files=['/var/backups/payroll.csv','/var/db/customers.sql','/opt/app/secrets.yml',
+               '/home/root/.ssh/id_rsa','/opt/app/config/.env','/var/db/customers.sql'];
+  files.forEach((f,i)=>push(isoOf(14,3,5+i,ri(0,59)), ip, user, 'file', 'OK', 'read '+f));
+  push(isoOf(14,3,14,22), ip, user, 'web', 'OK', 'GET /api/users?all=true 200');
+  push(isoOf(14,3,19,50), ip, user, 'web', 'OK', 'POST /api/export 200 (payload 820MB)');
+}
+
+const SCENARIOS={
+  external:[attackExternal], lowslow:[attackLowSlow], insider:[attackInsider],
+  all:[attackExternal, attackLowSlow, attackInsider]
+};
+
+function generateScenario(name='external'){
+  rand = mulberry32(20260314);
+  const ev=[];
+  const push=(time,ip,user,action,result,detail)=>ev.push({time,ip,user,action,result,detail});
+  genBackground(push);
+  (SCENARIOS[name]||SCENARIOS.external).forEach(fn=>fn(push));
+  ev.sort((a,b)=>a.time<b.time?-1:1);
+  return ev;
+}
+
+/* ---------- best-effort parser for user logs ---------- */
+function parseLogs(text){
+  const out=[];
+  text.split(/\r?\n/).forEach(line=>{
+    line=line.trim(); if(!line) return;
+    // primary pipe format
+    if(line.includes('|')){
+      const p=line.split('|').map(s=>s.trim());
+      if(p.length>=5){
+        out.push({time:p[0],ip:p[1],user:p[2]||'-',action:(p[3]||'').toLowerCase(),result:(p[4]||'').toUpperCase(),detail:p[5]||''});
+        return;
+      }
+    }
+    // loose fallback: pull an ISO time + an IP, guess the rest
+    const tm=line.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/);
+    const ip=line.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/);
+    if(tm&&ip){
+      const low=line.toLowerCase();
+      const action= low.includes('sudo')?'sudo': low.includes('ssh')||low.includes('sshd')?'ssh': (low.includes('get ')||low.includes('post '))?'web':'file';
+      const result= /fail|invalid|denied|wrong|401|403/.test(low)?'FAIL': /404|scan/.test(low)?'SCAN':'OK';
+      const um=line.match(/user[=\s:]+(\w+)/i);
+      out.push({time:tm[0].replace(' ','T'),ip:ip[0],user:um?um[1]:'-',action,result,detail:line.slice(0,80)});
+    }
+  });
+  out.sort((a,b)=>a.time<b.time?-1:1);
+  return out;
+}
+
+/* ======================================================================
+   DETECTION ENGINE
+   ====================================================================== */
+const STAGE = {RECON:'Reconnaissance',BRUTE:'Brute force',COMP:'Credential compromise',PRIV:'Privilege escalation',EXFIL:'Exfiltration',TRAVEL:'Impossible travel',NOISE:'Suspicious volume'};
+
+function tMs(t){return Date.parse(t);}
+function hoursBetween(a,b){return Math.abs(tMs(a)-tMs(b))/3600000;}
+
+/* find same-account logins from locations too far apart in time to be one person */
+function detectImpossibleTravel(events){
+  const byUser={};
+  events.forEach(e=>{ if(e.action==='ssh'&&e.result==='OK'&&e.user&&e.user!=='-'){ (byUser[e.user]||=[]).push(e);} });
+  const hits={}; // ip -> [{user, a, b, mins}]
+  for(const [user,list] of Object.entries(byUser)){
+    list.sort((a,b)=>tMs(a.time)-tMs(b.time));
+    for(let i=1;i<list.length;i++){
+      const a=list[i-1], b=list[i];
+      const ca=locClass(a.ip), cb=locClass(b.ip);
+      if(ca===cb || ca==='unknown' || cb==='unknown') continue;
+      if(!(ca.startsWith('ext:')||cb.startsWith('ext:'))) continue; // at least one untrusted location
+      const mins=(tMs(b.time)-tMs(a.time))/60000;
+      if(mins<=60){
+        const extIp = ca.startsWith('ext:')?a.ip:b.ip;
+        (hits[extIp]||=[]).push({user,a,b,mins:Math.round(mins)});
+      }
+    }
+  }
+  return hits;
+}
+
+function analyze(events){
+  const byIP = {};
+  events.forEach((e,idx)=>{ e._i=idx; (byIP[e.ip] ||= []).push(e); });
+
+  // baseline: median events per IP, to judge anomalous volume
+  const counts = Object.values(byIP).map(a=>a.length).sort((a,b)=>a-b);
+  const median = counts.length? counts[Math.floor(counts.length/2)]:1;
+
+  const travel = detectImpossibleTravel(events);
+  const incidents=[];
+  let incN=0;
+
+  for(const [ip, evs] of Object.entries(byIP)){
+    const findings=[];
+    let score=0;
+    const add=(sev,title,desc,evidence,tech)=>{findings.push({sev,title,desc,evidence,tech:tech||''});};
+
+    const ext = isExternal(ip);
+    const fails = evs.filter(e=>e.result==='FAIL');
+    const scans = evs.filter(e=>e.result==='SCAN');
+    const sshFails = fails.filter(e=>e.action==='ssh');
+    const usersTried = new Set(sshFails.map(e=>e.user));
+    const sshOK = evs.filter(e=>e.action==='ssh'&&e.result==='OK');
+    const sudo = evs.filter(e=>e.action==='sudo');
+    const fileReads = evs.filter(e=>e.action==='file'&&e.result==='OK');
+    const bigXfer = evs.filter(e=>/\d+\s?(MB|GB)|export/i.test(e.detail));
+    const failSpan = sshFails.length>=2 ? hoursBetween(sshFails[0].time, sshFails[sshFails.length-1].time) : 0;
+
+    // RULE: endpoint scanning
+    if(scans.length>=6){
+      score+=22; add('high',STAGE.RECON,`Scanned ${scans.length} sensitive endpoints (admin panels, .env, backups) returning 404 — classic reconnaissance sweep.`,scans.slice(0,8),'T1595 · Active Scanning');
+    }
+    // RULE: brute force volume
+    if(sshFails.length>=20){
+      score+=30; add('critical',STAGE.BRUTE,`${sshFails.length} failed SSH logins — far above the normal rate — indicate an automated password-guessing attack.`,sshFails.slice(0,6),'T1110 · Brute Force');
+    } else if(sshFails.length>=8){
+      score+=14; add('medium',STAGE.BRUTE,`${sshFails.length} failed SSH logins${failSpan>=2?` spread over ${failSpan.toFixed(1)}h — a "low & slow" pattern that evades simple rate limits`:''}.`,sshFails.slice(0,6),'T1110 · Brute Force');
+    }
+    // RULE: credential stuffing — many usernames from an EXTERNAL source (internal
+    // hosts legitimately see several users, so this is gated to external + volume)
+    if(usersTried.size>=4 && sshFails.length>=8 && ext){
+      score+=16; add('high',STAGE.BRUTE,`Tried ${usersTried.size} different usernames (${[...usersTried].slice(0,6).join(', ')}) — credential stuffing, not a forgetful user.`,sshFails.slice(0,4),'T1110.004 · Credential Stuffing');
+    }
+    // RULE: compromise pivot — success after failures, but only when the failures look
+    // like an ATTACK (multiple accounts, preceding recon, or huge volume) rather than one
+    // user mistyping their password repeatedly before getting it right
+    const attackish = usersTried.size>=2 || scans.length>=6 || sshFails.length>=40;
+    const loud = sshFails.length>=15 && attackish;
+    const slow = sshFails.length>=6 && usersTried.size>=3 && ext; // low-volume but spread across accounts
+    if(sshOK.length>=1 && (loud||slow)){
+      const first=sshOK[0];
+      score+=28; add('critical',STAGE.COMP,`Login SUCCEEDED as "${first.user}" at ${first.time} after ${sshFails.length} failures — credentials were very likely guessed. This is the pivot point of the incident.`,[first],'T1078 · Valid Accounts');
+    }
+    // RULE: impossible travel (account used from two locations at once)
+    if(travel[ip]){
+      const h=travel[ip][0];
+      score+=24; add('critical',STAGE.TRAVEL,`Account "${h.user}" authenticated from ${geoOf(h.a.ip)} and ${geoOf(h.b.ip)} just ${h.mins} min apart — physically impossible, so one session is an imposter.`,[h.a,h.b],'T1078 · Valid Accounts');
+    }
+    // RULE: privilege escalation
+    const sudoOK=sudo.filter(e=>e.result==='OK');
+    if(sudo.length>=1 && (loud||slow||scans.length>=6)){
+      score+=18; add('high',STAGE.PRIV,`sudo / root escalation from the same source that broke in${sudoOK.some(e=>/su - root|root/i.test(e.detail))?' (escalated to root)':''}.`,sudo,'T1548 · Abuse Elevation Control');
+    }
+    // RULE: sensitive file access (score scales with breadth)
+    const sensitive = fileReads.filter(e=>/shadow|\.ssh|id_rsa|customers|payroll|secrets|\.sql|\.env/i.test(e.detail));
+    const uniqSensitive = new Set(sensitive.map(e=>e.detail)).size;
+    if(sensitive.length>=1){
+      score+=12+Math.min(uniqSensitive,6)*3;
+      add('critical',STAGE.EXFIL,`Accessed ${uniqSensitive} distinct sensitive file(s) including credential / customer data.`,sensitive.slice(0,6),'T1005 · Data from Local System');
+    }
+    // RULE: large data transfer
+    if(bigXfer.length>=1){
+      const sz=(bigXfer[0].detail.match(/\d+\s?(MB|GB)/i)||[''])[0];
+      score+=14; add('critical',STAGE.EXFIL,`Large outbound export detected${sz?` (${sz})`:''} — probable data exfiltration.`,bigXfer,'T1041 · Exfiltration Over C2');
+    }
+    // RULE: off-hours concentration
+    const night = evs.filter(e=>{const h=new Date(e.time).getUTCHours();return h>=0&&h<5;});
+    if(night.length>=6 && night.length/evs.length>0.3 && (sensitive.length||bigXfer.length||sshFails.length>=6)){
+      score+=8; add('medium','Off-hours activity',`${night.length} events between 00:00–05:00 — the sensitive activity happened well outside business hours.`,night.slice(0,4),'behavioral');
+    }
+    // STAT: anomalous volume vs baseline
+    const ratio = evs.length/Math.max(median,1);
+    if(ratio>=8 && evs.length>=25){
+      score+=10; add('medium',STAGE.NOISE,`Generated ${evs.length} events — about ${ratio.toFixed(0)}× the typical source (median ${median}). Statistically anomalous volume.`,evs.slice(0,3),'behavioral');
+    }
+    const failRatio = fails.length/Math.max(evs.length,1);
+    if(fails.length>=10 && failRatio>0.4 && sshFails.length<20){
+      score+=8; add('low','High failure ratio',`${(failRatio*100).toFixed(0)}% of this source's events failed — noisy or misbehaving client worth review.`,fails.slice(0,4),'behavioral');
+    }
+
+    if(findings.length===0) continue;
+
+    const sev = score>=70?'critical': score>=40?'high': score>=20?'medium':'low';
+
+    const stageOrder=[STAGE.RECON,STAGE.BRUTE,STAGE.TRAVEL,STAGE.COMP,STAGE.PRIV,STAGE.EXFIL,STAGE.NOISE];
+    const seenStage=new Set();
+    const chain = findings
+      .filter(f=>stageOrder.includes(f.title))
+      .sort((a,b)=>stageOrder.indexOf(a.title)-stageOrder.indexOf(b.title))
+      .filter(f=>{ if(seenStage.has(f.title)) return false; seenStage.add(f.title); return true; })
+      .map(f=>({stage:f.title, time:f.evidence[0]?f.evidence[0].time:'', desc:f.desc}));
+
+    // confidence: how many distinct kill-chain stages corroborate
+    const killStages=[STAGE.RECON,STAGE.BRUTE,STAGE.COMP,STAGE.TRAVEL,STAGE.PRIV,STAGE.EXFIL];
+    const stagesHit=new Set(findings.filter(f=>killStages.includes(f.title)).map(f=>f.title)).size;
+    const confidence = (stagesHit>=3 && score>=60)?'High':(stagesHit>=2||score>=35)?'Medium':'Low';
+
+    const techniques=[...new Set(findings.map(f=>f.tech).filter(t=>t&&t!=='behavioral'))];
+
+    incidents.push({
+      id:'INC-'+String(++incN).padStart(3,'0'),
+      ip, geo:geoOf(ip), external:ext, score, sev, confidence, findings, chain, techniques,
+      events:evs,
+      stats:{total:evs.length,fails:fails.length,scans:scans.length,users:usersTried.size},
+      actions: recommend(findings, ip, ext),
+      narrative: buildNarrative(ip, findings, sshFails.length, usersTried.size)
+    });
+  }
+
+  incidents.sort((a,b)=>b.score-a.score);
+  const flaggedIPs = new Set(incidents.filter(i=>i.sev!=='low').map(i=>i.ip));
+  events.forEach(e=>e._flag = flaggedIPs.has(e.ip));
+
+  return {incidents, byIP, median};
+}
+
+function recommend(findings, ip, ext){
+  const has=s=>findings.some(f=>f.title===s);
+  const a=[];
+  if(has(STAGE.COMP)||has(STAGE.TRAVEL)) a.push('Disable the affected account(s) immediately and force a password + session reset.');
+  if(ext) a.push(`Block ${ip} at the firewall / edge and add it to the threat blocklist.`);
+  if(has(STAGE.PRIV)) a.push('Audit all root/sudo actions from this session and rotate any credentials it could reach.');
+  if(has(STAGE.EXFIL)) a.push('Engage incident response: scope the data exposure and preserve these logs as evidence.');
+  if(has(STAGE.RECON)&&!has(STAGE.COMP)) a.push('Harden exposed endpoints — confirm admin panels require auth and are not public.');
+  if(has(STAGE.BRUTE)&&!has(STAGE.COMP)) a.push('Enforce account lockout / rate-limiting and require MFA on SSH.');
+  if(!ext && (has(STAGE.EXFIL))) a.push('Verify the data access with the account owner and their manager — possible insider misuse.');
+  if(!a.length) a.push('Review the evidence and confirm whether this source is expected.');
+  return a;
+}
+
+function buildNarrative(ip, findings, bruteN, userN){
+  const has=s=>findings.some(f=>f.title===s);
+  // full external intrusion
+  if(has(STAGE.COMP)){
+    let n=`Source <b>${ip}</b> (${geoOf(ip)}) ran a complete intrusion. `;
+    if(has(STAGE.RECON)) n+=`It began by <b>scanning for exposed admin panels and config files</b>, then `;
+    n+=`ran a <b>brute-force attack (${bruteN} failed logins across ${userN} account${userN===1?'':'s'})</b>. One attempt eventually <b>succeeded</b> — the moment of compromise. `;
+    if(has(STAGE.TRAVEL)) n+=`The same account was simultaneously active from a trusted location, <b>confirming the login was an imposter</b>. `;
+    if(has(STAGE.PRIV)) n+=`The attacker then <b>escalated privileges</b>, `;
+    if(has(STAGE.EXFIL)) n+=`accessed <b>sensitive credential and customer files</b> and pushed a <b>large outbound export</b> consistent with data theft. `;
+    n+=`These events are connected and should be handled as one active incident, not isolated alerts.`;
+    return n;
+  }
+  // impossible travel without a detected brute pivot
+  if(has(STAGE.TRAVEL)){
+    return `A valid account was used from <b>${ip}</b> (${geoOf(ip)}) while also active from a trusted location minutes apart — <b>account takeover</b>. Treat the credentials as compromised regardless of how they were obtained.`;
+  }
+  // insider: internal source, sensitive access + export, no break-in
+  if(!isExternal(ip) && has(STAGE.EXFIL)){
+    return `A <b>valid internal account</b> on ${ip} accessed and exported <b>sensitive data far outside normal hours, with no preceding login failures</b> — consistent with credential misuse or a <b>malicious insider</b>. Confirm with the account owner before concluding; the absence of a break-in is exactly why this is easy to miss.`;
+  }
+  if(bruteN>=20) return `Source <b>${ip}</b> (${geoOf(ip)}) is running a <b>password-guessing attack</b> (${bruteN} failures across ${userN} accounts) but has not yet succeeded. Block the IP and watch the targeted accounts.`;
+  return `Source <b>${ip}</b> (${geoOf(ip)}) shows anomalous but lower-confidence activity. Review the evidence below.`;
+}
+
+/* ======================================================================
+   RENDERING
+   ====================================================================== */
+let STATE={events:[],result:null};
+
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function fmtLog(e){
+  const rc = e.result==='FAIL'?'fail':e.result==='OK'?'ok':'';
+  return `<span class="t">${esc(e.time)}</span> <span class="ip">${esc(e.ip)}</span> <span class="u">${esc(e.user)}</span> ${esc(e.action)} <span class="${rc}">${esc(e.result)}</span> ${esc(e.detail)}`;
+}
+
+function render(){
+  const {events,result}=STATE;
+  if(!result){return;}
+  const {incidents}=result;
+
+  // stat strip
+  const ips=new Set(events.map(e=>e.ip));
+  document.getElementById('s-events').textContent=events.length.toLocaleString();
+  document.getElementById('s-ips').textContent=ips.size;
+  const span = events.length? events[0].time.slice(5,16)+' → '+events[events.length-1].time.slice(5,16):'—';
+  document.getElementById('s-span').textContent=span;
+  const real=incidents.filter(i=>i.sev!=='low');
+  document.getElementById('s-inc').textContent=real.length;
+  const topSev = incidents[0]?incidents[0].sev:'none';
+  const sevEl=document.getElementById('s-sev');
+  sevEl.textContent=topSev;
+  sevEl.className='v '+(topSev==='critical'?'crit':topSev==='high'?'warn':'safe');
+  document.getElementById('b-inc').textContent=real.length;
+  document.getElementById('b-ev').textContent=events.length;
+
+  renderIncidents(incidents);
+  renderEvents();
+  renderOverview();
+}
+
+function renderIncidents(incidents){
+  const host=document.getElementById('incidentList');
+  const shown=incidents.filter(i=>i.sev!=='low'||i.score>=15);
+  if(!shown.length){host.innerHTML='<div class="empty">No incidents detected. Either the logs are clean, or the format wasn\'t recognized — check <b>How it works</b>.</div>';return;}
+  host.innerHTML=shown.map(inc=>`
+    <div class="incident" data-id="${inc.id}">
+      <button class="inc-head">
+        <span class="sev-chip sev-${inc.sev}">${inc.sev.toUpperCase()}</span>
+        <span style="min-width:0">
+          <span class="inc-id">${inc.id}</span>
+          <div class="inc-actor">${esc(inc.ip)}</div>
+          <div class="inc-geo">${inc.external?'<span class="ext">external</span> · ':'internal · '}${esc(inc.geo)}</div>
+          <div class="inc-sum">${inc.findings.length} findings · ${inc.stats.total} events · ${inc.stats.fails} failures${inc.stats.scans?` · ${inc.stats.scans} scans`:''}</div>
+          <span class="conf-chip">confidence: ${inc.confidence}</span>
+        </span>
+        <span class="inc-score">
+          <span class="n" style="color:var(--${inc.sev==='critical'?'crit':inc.sev==='high'?'high':inc.sev==='medium'?'warn':'info'})">${inc.score}</span>
+          <div class="l">threat</div>
+          <span class="chev">▶</span>
+        </span>
+      </button>
+      <div class="inc-body">
+        <div class="narrative">${inc.narrative}</div>
+        ${inc.techniques.length?`<div class="tech-wrap">${inc.techniques.map(t=>`<span class="tech-chip">${esc(t)}</span>`).join('')}</div>`:''}
+        ${inc.chain.length?`<h4 style="margin:0 0 12px;font-size:13px">Reconstructed attack chain</h4>
+        <ul class="kchain">${inc.chain.map(k=>`
+          <li class="kstep"><span class="kdot"></span>
+            <div class="kstage">${esc(k.stage)}</div>
+            <div class="ktime">${esc(k.time)}</div>
+            <div class="kdesc">${k.desc}</div>
+          </li>`).join('')}</ul>`:''}
+        <div class="actions">
+          <h4>Recommended response</h4>
+          <ol>${inc.actions.map(a=>`<li>${esc(a)}</li>`).join('')}</ol>
+        </div>
+        <h4 style="margin:20px 0 10px;font-size:13px">Evidence</h4>
+        ${inc.findings.map(f=>`
+          <div class="ev-group">
+            <h4><span class="sev-chip sev-${f.sev}" style="padding:2px 8px">${f.sev}</span>${esc(f.title)} ${f.tech&&f.tech!=='behavioral'?`<span class="tech-chip">${esc(f.tech)}</span>`:''} <span class="cnt">${f.evidence.length} line(s)</span></h4>
+            ${f.evidence.slice(0,6).map(e=>`<div class="logline">${fmtLog(e)}</div>`).join('')}
+          </div>`).join('')}
+        <button class="report-btn" data-report="${inc.id}">Generate incident report</button>
+      </div>
+    </div>`).join('');
+  host.querySelectorAll('.inc-head').forEach(h=>h.addEventListener('click',()=>h.closest('.incident').classList.toggle('open')));
+  host.querySelectorAll('[data-report]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openReport(b.dataset.report);}));
+}
+
+/* ---------- incident report (copy-friendly, works inside published page) ---------- */
+function openReport(id){
+  const inc=STATE.result.incidents.find(i=>i.id===id); if(!inc) return;
+  const L=[];
+  L.push('# INCIDENT REPORT — '+inc.id);
+  L.push('');
+  L.push('Severity        : '+inc.sev.toUpperCase()+'  (threat score '+inc.score+', confidence '+inc.confidence+')');
+  L.push('Source          : '+inc.ip+'  ['+(inc.external?'external':'internal')+' · '+inc.geo+']');
+  L.push('Events observed : '+inc.stats.total+'  ('+inc.stats.fails+' failures, '+inc.stats.scans+' scans)');
+  if(inc.techniques.length) L.push('MITRE ATT&CK    : '+inc.techniques.join('; '));
+  L.push('');
+  L.push('## Summary');
+  L.push(inc.narrative.replace(/<[^>]+>/g,''));
+  L.push('');
+  if(inc.chain.length){
+    L.push('## Attack chain');
+    inc.chain.forEach((k,i)=>{L.push((i+1)+'. ['+k.time+'] '+k.stage+' — '+k.desc.replace(/<[^>]+>/g,''));});
+    L.push('');
+  }
+  L.push('## Recommended response');
+  inc.actions.forEach((a,i)=>L.push((i+1)+'. '+a));
+  L.push('');
+  L.push('## Evidence (sample log lines)');
+  inc.findings.forEach(f=>{
+    L.push('• '+f.title+(f.tech&&f.tech!=='behavioral'?' ['+f.tech+']':''));
+    f.evidence.slice(0,4).forEach(e=>L.push('    '+e.time+' | '+e.ip+' | '+e.user+' | '+e.action+' | '+e.result+' | '+e.detail));
+  });
+  L.push('');
+  L.push('Generated by Intruder · '+new Date().toISOString());
+  document.getElementById('reportText').value=L.join('\n');
+  document.getElementById('reportModal').classList.add('open');
+}
+
+function renderEvents(){
+  const body=document.getElementById('evBody');
+  const q=document.getElementById('search').value.toLowerCase();
+  const ft=document.getElementById('fType').value;
+  const fs=document.getElementById('fStatus').value;
+  const ff=document.getElementById('fFlag').checked;
+  let rows=STATE.events.filter(e=>{
+    if(ft&&e.action!==ft) return false;
+    if(fs&&e.result!==fs) return false;
+    if(ff&&!e._flag) return false;
+    if(q){const blob=(e.time+e.ip+e.user+e.action+e.detail).toLowerCase();if(!blob.includes(q))return false;}
+    return true;
+  });
+  const cap=rows.length>800?800:rows.length;
+  body.innerHTML=rows.slice(0,cap).map(e=>`
+    <tr class="${e._flag?'flagged':''}">
+      <td class="t">${esc(e.time)}</td>
+      <td style="color:${e._flag?'var(--high)':'var(--muted)'}">${esc(e.ip)}</td>
+      <td style="color:var(--info)">${esc(e.user)}</td>
+      <td>${esc(e.action)}</td>
+      <td><span class="pill ${e.result}">${esc(e.result)}</span></td>
+      <td style="color:var(--muted)">${esc(e.detail)}</td>
+    </tr>`).join('') + (rows.length>cap?`<tr><td colspan="6" style="color:var(--faint);text-align:center">… ${rows.length-cap} more rows (narrow the filter to see them)</td></tr>`:'');
+}
+
+function bars(host, data, bad){
+  const max=Math.max(...data.map(d=>d[1]),1);
+  host.innerHTML=data.map(d=>`
+    <div class="bar-row">
+      <span class="lab">${esc(d[0])}</span>
+      <span class="bar-track"><span class="bar-fill ${bad&&bad(d[0])?'bad':''}" style="width:${(d[1]/max*100).toFixed(1)}%"></span></span>
+      <span class="num">${d[1]}</span>
+    </div>`).join('')||'<div class="empty" style="padding:20px">no data</div>';
+}
+
+function renderOverview(){
+  const ev=STATE.events, inc=STATE.result.incidents;
+  const flagged=new Set(inc.filter(i=>i.sev!=='low').map(i=>i.ip));
+
+  // spark: events per hour bucket
+  const buckets={};
+  ev.forEach(e=>{const k=e.time.slice(0,13);buckets[k]=buckets[k]||{n:0,hot:false};buckets[k].n++;if(e._flag)buckets[k].hot=true;});
+  const keys=Object.keys(buckets).sort();
+  const maxN=Math.max(...keys.map(k=>buckets[k].n),1);
+  document.getElementById('spark').innerHTML=keys.map(k=>`<div class="b ${buckets[k].hot?'hot':''}" style="height:${(buckets[k].n/maxN*100).toFixed(0)}%" title="${k}:00 — ${buckets[k].n} events"></div>`).join('');
+
+  const count=(arr,key)=>{const m={};arr.forEach(e=>{const v=key(e);if(v&&v!=='-')m[v]=(m[v]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,7);};
+  bars(document.getElementById('topips'), count(ev,e=>e.ip), ip=>flagged.has(ip));
+  bars(document.getElementById('topfails'), count(ev.filter(e=>e.result==='FAIL'),e=>e.ip), ip=>flagged.has(ip));
+  bars(document.getElementById('topusers'), count(ev.filter(e=>e.result==='FAIL'),e=>e.user));
+}
+
+/* rules documentation */
+document.getElementById('rulesDoc').innerHTML=[
+  ['Endpoint scanning','Many requests to sensitive paths (/admin, /.env, backups) returning 404 → reconnaissance. (T1595)'],
+  ['Brute force','Failed SSH logins above baseline — including "low & slow" attempts spread over hours to dodge rate limits. (T1110)'],
+  ['Credential stuffing','Failed logins spread across many distinct usernames. (T1110.004)'],
+  ['Compromise pivot','A successful login right after a wave of failures → likely guessed credentials. (T1078)'],
+  ['Impossible travel','One account authenticating from two locations too far apart in time to be the same person. (T1078)'],
+  ['Privilege escalation','sudo / root activity from a source that just broke in. (T1548)'],
+  ['Sensitive file access','Reads of credential, key, or customer-data files; score scales with breadth. (T1005)'],
+  ['Data exfiltration','Large outbound transfers or bulk exports. (T1041)'],
+  ['Statistical anomaly','Event volume and failure ratio measured against the per-source median baseline.'],
+  ['Correlation & scoring','Findings for one source are fused into a scored incident, a kill-chain narrative, a confidence rating, and recommended actions.'],
+].map(([t,d])=>`<div class="bar-row" style="grid-template-columns:180px 1fr"><span class="lab" style="color:var(--text)">${t}</span><span style="color:var(--muted);white-space:normal;font-family:var(--sans);font-size:13px">${d}</span></div>`).join('');
+
+/* ---------- wiring ---------- */
+function loadEvents(events){
+  if(!events.length){alert('No valid log lines were found. Check the format in "How it works".');return;}
+  STATE.events=events;
+  STATE.result=analyze(events);
+  render();
+  document.querySelector('.tab[data-view="incidents"]').click();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+document.getElementById('btnSample').addEventListener('click',()=>loadEvents(generateScenario(document.getElementById('scenario').value)));
+document.getElementById('scenario').addEventListener('change',e=>loadEvents(generateScenario(e.target.value)));
+document.getElementById('btnUpload').addEventListener('click',()=>document.getElementById('modal').classList.add('open'));
+document.getElementById('mClose').addEventListener('click',()=>document.getElementById('modal').classList.remove('open'));
+document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')document.getElementById('modal').classList.remove('open');});
+document.getElementById('mRun').addEventListener('click',()=>{
+  const txt=document.getElementById('pasteArea').value;
+  if(!txt.trim()){alert('Paste some log lines or choose a file first.');return;}
+  loadEvents(parseLogs(txt));
+  document.getElementById('modal').classList.remove('open');
+});
+document.getElementById('fileInput').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{document.getElementById('pasteArea').value=r.result;};r.readAsText(f);
+});
+
+/* report modal */
+document.getElementById('rClose').addEventListener('click',()=>document.getElementById('reportModal').classList.remove('open'));
+document.getElementById('reportModal').addEventListener('click',e=>{if(e.target.id==='reportModal')document.getElementById('reportModal').classList.remove('open');});
+document.getElementById('rCopy').addEventListener('click',()=>{
+  const ta=document.getElementById('reportText');
+  ta.select();
+  let ok=false;
+  try{ok=document.execCommand('copy');}catch(_){}
+  if(navigator.clipboard&&!ok){navigator.clipboard.writeText(ta.value).catch(()=>{});}
+  const btn=document.getElementById('rCopy');const o=btn.textContent;btn.textContent='Copied ✓';setTimeout(()=>btn.textContent=o,1400);
+});
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('view-'+t.dataset.view).classList.add('active');
+}));
+['search','fType','fStatus'].forEach(id=>document.getElementById(id).addEventListener('input',renderEvents));
+document.getElementById('fFlag').addEventListener('change',renderEvents);
+
+/* auto-load a scenario so the page is never empty on arrival */
+loadEvents(generateScenario('external'));
+</script>
+</body>
+</html>
