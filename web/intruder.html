@@ -649,6 +649,7 @@ function analyze(events){
   }
 
   incidents.sort((a,b)=>b.score-a.score);
+  incidents.forEach((inc,i)=>inc.id='INC-'+String(i+1).padStart(3,'0'));
   const flaggedIPs = new Set(incidents.filter(i=>i.sev!=='low').map(i=>i.ip));
   events.forEach(e=>e._flag = flaggedIPs.has(e.ip));
 

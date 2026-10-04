@@ -16,7 +16,7 @@ shares the same detection logic and is the interactive demo.
 ## Quick start
 
 ```bash
-cd intruder_py
+cd python
 
 # analyze a built-in attack scenario (no data needed)
 python analyze.py --scenario external
@@ -169,12 +169,13 @@ usable events instead of failing.
 
 ### Common submission expectations
 
-- **Deployed demo:** `intruder.html` (the web console) + this CLI.
+- **Deployed demo:** https://anushreekasturi.github.io/algothon/ (the web console) + this CLI.
 - **Source + README:** this folder.
 - **Architecture diagram + decisions:** above.
 - **Core workflow demo:** `python analyze.py --scenario all --report`.
-- **Testing / edge cases:** benign decoy stays unflagged; parser tolerates
-  malformed lines; low-and-slow and insider paths exercise non-volume detection.
+- **Testing / edge cases:** `python -m unittest -v` (`test_intruder.py`, run in CI) —
+  benign decoy stays unflagged; parser tolerates malformed lines; low-and-slow
+  and insider paths exercise non-volume detection.
 - **Known limitations / future work:** below.
 - **AI-assisted components / external data:** none required; GeoIP is a stub.
 
